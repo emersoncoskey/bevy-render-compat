@@ -1,3 +1,4 @@
+pub mod node;
 pub mod resource;
 pub(crate) mod setup;
 
@@ -255,7 +256,7 @@ impl<'g> RenderGraphBuilder<'g> {
         &mut self,
         label: Label<'g>,
         dependencies: RenderDependencies<'g>,
-        node: impl FnOnce(NodeContext, &RenderDevice, &RenderQueue, &mut CommandEncoder) + 'g,
+        node: impl FnOnce(NodeContext, &'g RenderDevice, &'g RenderQueue, &'g mut CommandEncoder) + 'g,
     ) -> &mut Self {
         //get + save dependency generations here, since they're not stored in RenderDependencies.
         //This is to make creating a RenderDependencies (and cloning!) a pure operation.
@@ -273,7 +274,7 @@ impl<'g> RenderGraphBuilder<'g> {
         &mut self,
         label: Label<'g>,
         dependencies: RenderDependencies<'g>,
-        node: impl FnOnce(NodeContext, &RenderDevice, &RenderQueue, &mut ComputePass) + 'g,
+        node: impl FnOnce(NodeContext, &'g RenderDevice, &'g RenderQueue, &'g mut ComputePass) + 'g,
     ) -> &mut Self {
         //get + save dependency generations here, since they're not stored in RenderDependencies.
         //This is to make creating a RenderDependencies (and cloning!) a pure operation.
