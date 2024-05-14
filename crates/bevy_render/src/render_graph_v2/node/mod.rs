@@ -11,19 +11,24 @@ use super::{
 };
 use crate::{prelude::Shader, render_resource::Texture};
 use bevy_asset::Handle;
-use wgpu::{TextureUsages, TextureViewDescriptor};
+use wgpu::{
+    BindGroupLayoutEntry, BindingType, ShaderStages, TextureUsages, TextureViewDescriptor,
+    TextureViewDimension,
+};
 
-pub struct ComputePass<'g> {
+pub struct ComputeNode<'g> {
     label: &'static str,
     shader: Handle<Shader>,
+    layout: Vec<BindGroupLayoutEntry>,
     bindings: Vec<RenderGraphBindGroupEntry<'g>>,
+    dependencies: RenderDependencies<'g>,
     dispatch_x: u32,
     dispatch_y: u32,
     dispatch_z: u32,
     graph: &'g mut RenderGraphBuilder<'g>,
 }
 
-impl<'g> ComputePass<'g> {
+impl<'g> ComputeNode<'g> {
     pub fn new(
         label: &'static str,
         shader: Handle<Shader>,
@@ -32,7 +37,9 @@ impl<'g> ComputePass<'g> {
         Self {
             label,
             shader,
+            layout: Vec::new(),
             bindings: Vec::new(),
+            dependencies: RenderDependencies::new(),
             dispatch_x: 1,
             dispatch_y: 1,
             dispatch_z: 1,
@@ -41,6 +48,9 @@ impl<'g> ComputePass<'g> {
     }
 
     pub fn texture(&mut self, texture: RenderHandle<'g, Texture>) -> &mut Self {
+        // TODO: Don't unwrap - where would this fail?
+        let texture_descriptor = self.graph.get_descriptor_of(texture).unwrap();
+
         let texture_view = self
             .graph
             .new_texture_view_descriptor(RenderGraphTextureView {
@@ -48,10 +58,24 @@ impl<'g> ComputePass<'g> {
                 descriptor: TextureViewDescriptor::default(),
             });
 
+        self.layout.push(BindGroupLayoutEntry {
+            binding: self.layout.len() as u32,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Texture {
+                sample_type: texture_descriptor.format.sample_type(None, None).unwrap(), // TODO: ?
+                view_dimension: TextureViewDimension::D2,
+                // TODO: Hardcode to false and provide a seperate builder method for multisampled textures, or read from the texture descriptor, or?
+                multisampled: false,
+            },
+            count: None,
+        });
+
         self.bindings.push(RenderGraphBindGroupEntry {
             binding: self.bindings.len() as u32,
             resource: RenderGraphBindingResource::TextureView(texture_view),
         });
+
+        self.dependencies.read(texture);
 
         self.graph
             .add_usages(texture, TextureUsages::TEXTURE_BINDING);
@@ -80,16 +104,7 @@ impl<'g> ComputePass<'g> {
     }
 
     pub fn build(self) {
-        let bind_group_layout = self.graph.new_bind_group_layout_descriptor(todo!());
-
-        let bind_group = self
-            .graph
-            .new_bind_group_descriptor(RenderGraphBindGroupDescriptor {
-                label: Some(&self.label),
-                layout: bind_group_layout,
-                dependencies: todo!(),
-                bindings: self.bindings,
-            });
+        let bind_group_layout = self.graph.new_bind_group_layout_descriptor(self.layout);
 
         let pipeline =
             self.graph
@@ -102,10 +117,19 @@ impl<'g> ComputePass<'g> {
                     entry_point: self.label.into(),
                 });
 
+        let bind_group = self
+            .graph
+            .new_bind_group_descriptor(RenderGraphBindGroupDescriptor {
+                label: Some(&self.label),
+                layout: bind_group_layout,
+                dependencies: self.dependencies,
+                bindings: self.bindings,
+            });
+
         self.graph.add_compute_node(
             Some(&self.label),
-            RenderDependencies::of((&bind_group, &pipeline)),
-            |context, _, _, pass| {
+            self.dependencies, // TODO: Include pipeline?
+            |context, pass| {
                 pass.set_bind_group(0, context.get_bind_group(bind_group).expect("TODO"), &[]);
                 pass.set_pipeline(context.get_compute_pipeline(pipeline).expect("TODO"));
                 pass.dispatch_workgroups(self.dispatch_x, self.dispatch_y, self.dispatch_z);
