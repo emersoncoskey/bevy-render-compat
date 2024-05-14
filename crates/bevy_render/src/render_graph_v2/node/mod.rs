@@ -63,6 +63,7 @@ impl<'g> ComputeNode<'g> {
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::Texture {
                 sample_type: texture_descriptor.format.sample_type(None, None).unwrap(), // TODO: ?
+                // TODO: Hardcode, or ?
                 view_dimension: TextureViewDimension::D2,
                 // TODO: Hardcode to false and provide a seperate builder method for multisampled textures, or read from the texture descriptor, or?
                 multisampled: false,
