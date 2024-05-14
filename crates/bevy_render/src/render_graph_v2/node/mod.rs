@@ -51,13 +51,6 @@ impl<'g> ComputeNode<'g> {
         // TODO: Don't unwrap - where would this fail?
         let texture_descriptor = self.graph.get_descriptor_of(texture).unwrap();
 
-        let texture_view = self
-            .graph
-            .new_texture_view_descriptor(RenderGraphTextureView {
-                texture,
-                descriptor: TextureViewDescriptor::default(),
-            });
-
         self.layout.push(BindGroupLayoutEntry {
             binding: self.layout.len() as u32,
             visibility: ShaderStages::COMPUTE,
@@ -70,6 +63,13 @@ impl<'g> ComputeNode<'g> {
             },
             count: None,
         });
+
+        let texture_view = self
+            .graph
+            .new_texture_view_descriptor(RenderGraphTextureView {
+                texture,
+                descriptor: TextureViewDescriptor::default(),
+            });
 
         self.bindings.push(RenderGraphBindGroupEntry {
             binding: self.bindings.len() as u32,
@@ -130,7 +130,7 @@ impl<'g> ComputeNode<'g> {
         self.graph.add_compute_node(
             Some(&self.label),
             self.dependencies, // TODO: Include pipeline?
-            |context, pass| {
+            move |context, pass| {
                 pass.set_bind_group(0, context.get_bind_group(bind_group).expect("TODO"), &[]);
                 pass.set_pipeline(context.get_compute_pipeline(pipeline).expect("TODO"));
                 pass.dispatch_workgroups(self.dispatch_x, self.dispatch_y, self.dispatch_z);
