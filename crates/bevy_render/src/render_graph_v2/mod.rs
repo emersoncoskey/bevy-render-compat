@@ -51,7 +51,6 @@ pub struct RenderGraph<'g> {
     buffers: RenderResources<'g, Buffer>,
     pipelines: RenderGraphPipelines<'g>,
     nodes: Vec<Node<'g>>,
-    //TODO:: store node graph here
 }
 
 struct Node<'g> {
@@ -60,11 +59,11 @@ struct Node<'g> {
     runner: NodeRunner<'g>,
 }
 
-//For later auto-merging render passes
 enum NodeRunner<'g> {
     Raw(Box<dyn FnOnce(NodeContext, &RenderDevice, &RenderQueue, &mut CommandEncoder) + 'g>),
+    //todo: possibility of auto-merging render passes?
     //Render(Box<dyn FnOnce(NodeContext, &RenderDevice, &RenderQueue, &mut RenderPass) + 'g>),
-    Compute(Box<dyn FnOnce(NodeContext, &RenderDevice, &RenderQueue, &mut ComputePass) + 'g>),
+    Compute(Box<dyn for<'n> FnOnce(&'n NodeContext, &mut ComputePass<'n>) + 'g>),
 }
 
 impl<'g> RenderGraph<'g> {
@@ -119,7 +118,7 @@ impl<'g> RenderGraph<'g> {
                                 label,
                                 timestamp_writes: None,
                             });
-                        (f)(context, render_device, render_queue, &mut compute_pass);
+                        (f)(&context, &mut compute_pass);
                     }
                 }
             }
@@ -241,7 +240,7 @@ impl<'g> RenderGraphBuilder<'g> {
         } else {
             let has_usages = R::get_descriptor(self, resource)
                 .map(|desc| R::has_usages(desc, &usages))
-                .unwrap_or(true); //if no descriptor available, defer to wgpu to detect incorrect usage
+                .unwrap_or(true); //if no descriptor available, defer to wgpu to detect incorrect usage (warn?)
             if !has_usages {
                 panic!(
                     "Descriptor for resource {:?} does not contain necessary usages: {:?}",
@@ -274,7 +273,7 @@ impl<'g> RenderGraphBuilder<'g> {
         &mut self,
         label: Label<'g>,
         dependencies: RenderDependencies<'g>,
-        node: impl FnOnce(NodeContext, &'g RenderDevice, &'g RenderQueue, &'g mut ComputePass) + 'g,
+        node: impl for<'n> FnOnce(&'n NodeContext, &mut ComputePass<'n>) + 'g,
     ) -> &mut Self {
         //get + save dependency generations here, since they're not stored in RenderDependencies.
         //This is to make creating a RenderDependencies (and cloning!) a pure operation.
@@ -634,10 +633,10 @@ impl<'g> RenderGraphBuilder<'g> {
 }
 
 #[derive(Clone)]
-pub struct NodeContext<'g> {
-    graph: &'g RenderGraph<'g>,
-    world: &'g World,
-    dependencies: RenderDependencies<'g>,
+pub struct NodeContext<'n> {
+    graph: &'n RenderGraph<'n>,
+    world: &'n World,
+    dependencies: RenderDependencies<'n>,
     // entity: EntityRef<'g>,
 }
 
