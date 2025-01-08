@@ -47,7 +47,7 @@ impl<'w, M: Material<P>, P: MaterialPipeline> MaterialData<'w, M, P> {
 
 pub struct PreparedMaterialInstance<'a, M: Material<P>, P: MaterialPipeline> {
     pub main_entity: MainEntity,
-    pub layout: &'a MaterialLayout<M>,
+    pub properties: &'a P::Meta,
     pub shaders: &'a MaterialShaders<M, P>,
     pub bind_group: &'a MaterialBindGroup<M>,
     pub properties: &'a MaterialProperties<M, P>,
