@@ -4,10 +4,10 @@ use bevy_render::{render_asset::RenderAssets, sync_world::MainEntity};
 
 use crate::{
     material::{
-        MaterialBindGroup, MaterialInstances, MaterialLayout, MaterialProperties, MaterialShaders,
+        Material, MaterialBindGroup, MaterialInstances, MaterialLayout, MaterialProperties,
+        MaterialShaders,
     },
     material_pipeline::MaterialPipeline,
-    prelude::Material,
 };
 
 #[derive(SystemParam)]
