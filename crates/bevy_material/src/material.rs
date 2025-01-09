@@ -19,10 +19,7 @@ use bevy_render::{
     Extract, ExtractSchedule, RenderApp,
 };
 
-use crate::{
-    handle::MaterialHandle,
-    material_pipeline::MaterialPipeline},
-};
+use crate::{handle::MaterialHandle, material_pipeline::MaterialPipeline};
 
 pub enum SpecializeMaterialError {}
 
