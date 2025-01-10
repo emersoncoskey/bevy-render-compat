@@ -2,10 +2,17 @@ use std::marker::PhantomData;
 
 use bevy_app::Plugin;
 use bevy_asset::AssetPath;
-use bevy_ecs::system::{ReadOnlySystemParam, SystemParamItem};
+use bevy_ecs::{
+    query::{QueryData, QueryItem, ROQueryItem, ReadOnlyQueryData, WorldQuery},
+    system::{ReadOnlySystemParam, SystemParamItem},
+    world::{FromWorld, World},
+};
 use bevy_reflect::TypePath;
 use bevy_render::{
-    render_resource::{CachedRenderPipelineId, RenderPipelineDescriptor},
+    render_resource::{
+        CachedRenderPipelineId, ComputePipelineDescriptor, RawComputePipelineDescriptor,
+        RawRenderPipelineDescriptor, RenderPipelineDescriptor,
+    },
     renderer::RenderDevice,
     Render,
 };
@@ -49,13 +56,84 @@ pub trait Pipelines {
 // }
 // ```
 
-pub struct MaterialRenderPipeline<S: Specialize<RenderPipelineDescriptor>> {
-    vertex_path: Option<AssetPath<'static>>,
-    fragment_path: Option<AssetPath<'static>>,
-    _data: PhantomData<S>, // wire up the specializer somewhere in here
+pub struct MaterialRenderPipeline<S: SpecializedRenderPipeline> {
+    vertex: AssetPath<'static>,
+    fragment: AssetPath<'static>,
+    user_specializer: Option<fn(RenderPipelineKey<S::Specializer>, &mut RenderPipelineDescriptor)>,
+    _data: PhantomData<S>,
 }
 
-pub trait Specialize<T>: Send + Sync + 'static {
+impl<S> Default for MaterialRenderPipeline<S>
+where
+    S: SpecializedRenderPipeline + DefaultVertex + DefaultFragment,
+{
+    fn default() -> Self {
+        Self {
+            vertex: S::default_vertex(),
+            fragment: S::default_fragment(),
+            user_specializer: None,
+            _data: PhantomData,
+        }
+    }
+}
+
+impl<S: SpecializedRenderPipeline> MaterialRenderPipeline<S> {
+    pub fn new(vertex: AssetPath<'static>, fragment: AssetPath<'static>) -> Self {
+        Self {
+            vertex,
+            fragment,
+            user_specializer: None,
+            _data: PhantomData,
+        }
+    }
+
+    pub fn with_vertex(self, vertex: AssetPath<'static>) -> Self {
+        Self { vertex, ..self }
+    }
+
+    pub fn with_fragment(self, fragment: AssetPath<'static>) -> Self {
+        Self { fragment, ..self }
+    }
+
+    pub fn specialize(
+        self,
+        specializer: fn(RenderPipelineKey<S::Specializer>, &mut RenderPipelineDescriptor),
+    ) -> Self {
+        Self {
+            user_specializer: Some(specializer),
+            ..self
+        }
+    }
+}
+
+type RenderPipelineKey<T> = <T as Specialize<RenderPipelineDescriptor>>::Key;
+type ComputePipelineKey<T> = <T as Specialize<ComputePipelineDescriptor>>::Key;
+
+//TODO: BAD NAME
+pub trait SpecializedRenderPipeline {
+    type Specializer: Specialize<RenderPipelineDescriptor>;
+    type Data: QueryData;
+
+    fn get_key(
+        data: ROQueryItem<Self::Data>,
+        world: &World,
+        last_key: Option<RenderPipelineKey<Self::Specializer>>,
+    ) -> RenderPipelineKey<Self::Specializer>;
+}
+
+pub trait DefaultVertex {
+    fn default_vertex() -> AssetPath<'static>;
+}
+
+pub trait DefaultFragment {
+    fn default_fragment() -> AssetPath<'static>;
+}
+
+pub trait DefaultCompute {
+    fn default_compute() -> AssetPath<'static>;
+}
+
+pub trait Specialize<T>: FromWorld + Send + Sync + 'static {
     type Key: Clone + Hash + Eq;
 
     fn specialize(&self, key: Self::Key, item: &mut T);
