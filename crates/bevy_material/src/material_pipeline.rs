@@ -10,8 +10,8 @@ use bevy_ecs::{
 use bevy_reflect::TypePath;
 use bevy_render::{
     render_resource::{
-        CachedRenderPipelineId, ComputePipelineDescriptor, RawComputePipelineDescriptor,
-        RawRenderPipelineDescriptor, RenderPipelineDescriptor,
+        CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
+        RawComputePipelineDescriptor, RawRenderPipelineDescriptor, RenderPipelineDescriptor,
     },
     renderer::RenderDevice,
     Render,
@@ -30,8 +30,10 @@ pub trait MaterialPipeline: TypePath + Sized + 'static {
 
 pub trait Pipelines {
     type Cached: Send + Sync;
+    type Data: QueryData;
 
-    //TODO
+    fn into_plugin(self) -> impl Plugin;
+    fn get_cached(data: ROQueryItem<Self::Data>, world: &World) -> Self::Cached;
 }
 
 // The goal here is something like:
@@ -59,8 +61,7 @@ pub trait Pipelines {
 pub struct MaterialRenderPipeline<S: SpecializedRenderPipeline> {
     vertex: AssetPath<'static>,
     fragment: AssetPath<'static>,
-    user_specializer: Option<fn(RenderPipelineKey<S::Specializer>, &mut RenderPipelineDescriptor)>,
-    _data: PhantomData<S>,
+    user_specializer: Option<fn(S::Key, &mut RenderPipelineDescriptor)>,
 }
 
 impl<S> Default for MaterialRenderPipeline<S>
@@ -72,7 +73,6 @@ where
             vertex: S::default_vertex(),
             fragment: S::default_fragment(),
             user_specializer: None,
-            _data: PhantomData,
         }
     }
 }
@@ -83,7 +83,6 @@ impl<S: SpecializedRenderPipeline> MaterialRenderPipeline<S> {
             vertex,
             fragment,
             user_specializer: None,
-            _data: PhantomData,
         }
     }
 
@@ -106,19 +105,21 @@ impl<S: SpecializedRenderPipeline> MaterialRenderPipeline<S> {
     }
 }
 
+impl<S: SpecializedRenderPipeline> Pipelines for MaterialRenderPipeline<S> {
+    type Cached = CachedRenderPipelineId;
+
+    fn into_plugin(self) -> impl Plugin {}
+}
+
 type RenderPipelineKey<T> = <T as Specialize<RenderPipelineDescriptor>>::Key;
 type ComputePipelineKey<T> = <T as Specialize<ComputePipelineDescriptor>>::Key;
 
-//TODO: BAD NAME
-pub trait SpecializedRenderPipeline {
-    type Specializer: Specialize<RenderPipelineDescriptor>;
+pub trait SpecializedRenderPipeline: Specialize<RenderPipelineDescriptor> {
     type Data: QueryData;
 
-    fn get_key(
-        data: ROQueryItem<Self::Data>,
-        world: &World,
-        last_key: Option<RenderPipelineKey<Self::Specializer>>,
-    ) -> RenderPipelineKey<Self::Specializer>;
+    fn get_key<'w>(data: ROQueryItem<Self::Data>, world: &World) -> Self::Key;
+
+    fn into_plugin(self) -> impl Plugin;
 }
 
 pub trait DefaultVertex {
@@ -135,12 +136,7 @@ pub trait DefaultCompute {
 
 pub trait Specialize<T>: FromWorld + Send + Sync + 'static {
     type Key: Clone + Hash + Eq;
-
     fn specialize(&self, key: Self::Key, item: &mut T);
-
-    fn chain<S: Specialize>(self, next: S) -> impl Specialize<T> {
-        (self, next)
-    }
 }
 
 impl<K: Clone + Hash + Eq, T, F: Fn(&self, K, &mut T)> Specialize<T> for F {
@@ -176,14 +172,35 @@ all_tuples!(
     k
 );
 
-pub struct RenderPipelineSpecializer<S: Specialize<RenderPipelineDescriptor>> {
+pub struct SpecializedRenderPipelines<S: Specialize<RenderPipelineDescriptor>> {
     specializer: S,
+    user_specializer: Option<fn(S::Key, &mut RenderPipelineDescriptor)>,
     pipelines: HashMap<S::Key, CachedRenderPipelineId>,
-    base: RenderPipelineDescriptor,
+    base_descriptor: RenderPipelineDescriptor,
 }
 
-impl<S: Specialize<RenderPipelineDescriptor>> RenderPipelineSpecializer<S> {
-    fn specialize(&self, render_device: &RenderDevice, key: S::Key) -> CachedRenderPipelineId {
-        todo!()
+impl<S: Specialize<RenderPipelineDescriptor>> SpecializedRenderPipelines<S> {
+    fn new(
+        specializer: S,
+        user_specializer: Option<fn(S::Key, &mut RenderPipelineDescriptor)>,
+        base_descriptor: RenderPipelineDescriptor,
+    ) -> Self {
+        Self {
+            specializer,
+            user_specializer,
+            pipelines: Default::default(),
+            base_descriptor,
+        }
+    }
+
+    fn specialize(&self, pipeline_cache: &PipelineCache, key: S::Key) -> CachedRenderPipelineId {
+        self.pipelines.entry(key.clone()).or_insert_with(|| {
+            let mut descriptor = self.base.clone();
+            self.specializer.specialize(key.clone(), &mut descriptor);
+            if let Some(user_specializer) = self.user_specializer {
+                (user_specializer)(key, &mut descriptor);
+            }
+            pipeline_cache.queue_render_pipeline(descriptor);
+        })
     }
 }
