@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use bevy_app::Plugin;
+use bevy_app::{App, Plugin};
 use bevy_asset::AssetPath;
 use bevy_ecs::{
     query::{QueryData, QueryItem, ROQueryItem, ReadOnlyQueryData, WorldQuery},
@@ -11,7 +11,8 @@ use bevy_reflect::TypePath;
 use bevy_render::{
     render_resource::{
         CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
-        RawComputePipelineDescriptor, RawRenderPipelineDescriptor, RenderPipelineDescriptor,
+        RawComputePipelineDescriptor, RawRenderPipelineDescriptor, RenderPipeline,
+        RenderPipelineDescriptor,
     },
     renderer::RenderDevice,
     Render,
@@ -21,7 +22,9 @@ use variadics_please::all_tuples;
 
 use crate::{
     material::Material,
-    specialize::{PartialSpecialize, RenderPipelineKey, Specialize},
+    specialize::{
+        DefaultFragment, DefaultVertex, SpecializedComputePipeline, SpecializedRenderPipeline,
+    },
 };
 
 pub trait MaterialPipeline: TypePath + Sized + 'static {
@@ -38,6 +41,8 @@ pub trait Pipelines {
     fn into_plugin(self) -> impl Plugin;
     fn get_cached(data: ROQueryItem<Self::Data>, world: &World) -> Self::Cached;
 }
+
+pub type CachedPipelines<P> = <P as Pipelines>::Cached;
 
 // The goal here is something like:
 // ```rust
@@ -61,37 +66,10 @@ pub trait Pipelines {
 // }
 // ```
 
-pub trait SpecializedRenderPipeline {
-    type Specializer: Specialize<RenderPipelineDescriptor>;
-}
-
-pub trait SpecializedComputePipeline {
-    type Specializer: Specialize<ComputePipelineDescriptor>;
-}
-
-pub trait DefaultVertex {
-    fn default_vertex() -> AssetPath<'static>;
-}
-
-pub trait DefaultFragment {
-    fn default_fragment() -> AssetPath<'static>;
-}
-
-pub trait DefaultCompute {
-    fn default_compute() -> AssetPath<'static>;
-}
-
 pub struct MaterialRenderPipeline<S: SpecializedRenderPipeline> {
     vertex: AssetPath<'static>,
     fragment: AssetPath<'static>,
-    user_specializer: Option<
-        Box<
-            dyn PartialSpecialize<
-                RenderPipelineDescriptor,
-                Key = RenderPipelineKey<S::Specializer>,
-            >,
-        >,
-    >,
+    user_specializer: Option<fn(S::Key, &mut RenderPipelineDescriptor)>,
 }
 
 impl<S> Default for MaterialRenderPipeline<S>
@@ -124,15 +102,9 @@ impl<S: SpecializedRenderPipeline> MaterialRenderPipeline<S> {
         Self { fragment, ..self }
     }
 
-    pub fn specialize(
-        self,
-        specializer: impl PartialSpecialize<
-            RenderPipelineDescriptor,
-            Key = RenderPipelineKey<S::Specializer>,
-        >,
-    ) -> Self {
+    pub fn specialize(self, specializer: fn(S::Key, &mut RenderPipelineDescriptor)) -> Self {
         Self {
-            user_specializer: Some(Box::new(specializer)),
+            user_specializer: Some(specializer),
             ..self
         }
     }
@@ -142,9 +114,11 @@ impl<S: SpecializedRenderPipeline> Pipelines for MaterialRenderPipeline<S> {
     type Cached = CachedRenderPipelineId;
 
     fn into_plugin(self) -> impl Plugin {
-        todo!()
+        |app: &mut App| {}
     }
 
     type Data = ();
-    fn get_cached(data: ROQueryItem<Self::Data>, world: &World) -> Self::Cached {}
+    fn get_cached(data: ROQueryItem<Self::Data>, world: &World) -> Self::Cached {
+        todo!()
+    }
 }
