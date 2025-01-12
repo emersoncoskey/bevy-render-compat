@@ -2,6 +2,7 @@ pub mod handle;
 pub mod material;
 pub mod material_data;
 pub mod material_pipeline;
+pub mod specialize;
 
 #[cfg(test)]
 mod tests {

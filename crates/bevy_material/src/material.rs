@@ -110,6 +110,7 @@ impl<M: BaseMaterial> RenderAsset for MaterialBindGroup<M> {
 
     fn prepare_asset(
         material: Self::SourceAsset,
+        _asset_id: AssetId<M>,
         (render_device, layout, ref mut material_param): &mut SystemParamItem<Self::Param>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         match material.as_bind_group(layout, render_device, material_param) {
@@ -145,6 +146,7 @@ impl<M: Material<P>, P: MaterialPipeline> RenderAsset for MaterialProperties<M, 
 
     fn prepare_asset(
         material: Self::SourceAsset,
+        _asset_id: AssetId<M>,
         (): &mut SystemParamItem<Self::Param>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         Ok(MaterialProperties::new(&material))
@@ -166,13 +168,6 @@ impl<M: BaseMaterial> FromWorld for MaterialLayout<M> {
             _data: PhantomData,
         }
     }
-}
-
-#[derive(Deref, Resource)]
-pub struct MaterialShaders<M: Material<P>, P: MaterialPipeline> {
-    #[deref]
-    pub shaders: HashMap<P::ShaderKey, Handle<Shader>>,
-    _data: PhantomData<fn(M)>,
 }
 
 impl<M: Material<P>, P: MaterialPipeline> FromWorld for MaterialShaders<M, P> {
