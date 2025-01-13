@@ -10,20 +10,19 @@ use bevy_ecs::{
 use bevy_reflect::TypePath;
 use bevy_render::{
     render_resource::{
-        CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
+        CachedComputePipelineId, CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
         RawComputePipelineDescriptor, RawRenderPipelineDescriptor, RenderPipeline,
         RenderPipelineDescriptor,
     },
     renderer::RenderDevice,
     Render,
 };
-use bevy_utils::HashMap;
-use variadics_please::all_tuples;
 
 use crate::{
     material::Material,
     specialize::{
-        DefaultFragment, DefaultVertex, SpecializedComputePipeline, SpecializedRenderPipeline,
+        DefaultCompute, DefaultFragment, DefaultVertex, SpecializedComputePipeline,
+        SpecializedRenderPipeline, SpecializedRenderPipelines,
     },
 };
 
@@ -35,6 +34,7 @@ pub trait MaterialPipeline: TypePath + Sized + 'static {
 }
 
 pub trait Pipelines {
+    type Specialized: Send + Sync;
     type Cached: Send + Sync;
     type Data: QueryData;
 
@@ -43,7 +43,6 @@ pub trait Pipelines {
 }
 
 pub type CachedPipelines<P> = <P as Pipelines>::Cached;
-
 // The goal here is something like:
 // ```rust
 // impl Material<Mesh3d> for StandardMaterial {
@@ -112,6 +111,54 @@ impl<S: SpecializedRenderPipeline> MaterialRenderPipeline<S> {
 
 impl<S: SpecializedRenderPipeline> Pipelines for MaterialRenderPipeline<S> {
     type Cached = CachedRenderPipelineId;
+    type Specialized = SpecializedRenderPipelines<S>;
+
+    fn into_plugin(self) -> impl Plugin {
+        |app: &mut App| {}
+    }
+
+    type Data = ();
+    fn get_cached(data: ROQueryItem<Self::Data>, world: &World) -> Self::Cached {
+        todo!()
+    }
+}
+
+pub struct MaterialComputePipeline<S: SpecializedComputePipeline> {
+    compute: AssetPath<'static>,
+    user_specializer: Option<fn(S::Key, &mut ComputePipelineDescriptor)>,
+}
+
+impl<S> Default for MaterialComputePipeline<S>
+where
+    S: SpecializedComputePipeline + DefaultCompute,
+{
+    fn default() -> Self {
+        Self {
+            compute: S::default_compute(),
+            user_specializer: None,
+        }
+    }
+}
+
+impl<S: SpecializedComputePipeline> MaterialComputePipeline<S> {
+    pub fn new(compute: AssetPath<'static>) -> Self {
+        Self {
+            compute,
+            user_specializer: None,
+        }
+    }
+
+    pub fn specialize(self, specializer: fn(S::Key, &mut ComputePipelineDescriptor)) -> Self {
+        Self {
+            user_specializer: Some(specializer),
+            ..self
+        }
+    }
+}
+
+impl<S: SpecializedComputePipeline> Pipelines for MaterialComputePipeline<S> {
+    type Cached = CachedComputePipelineId;
+    type Specialized = SpecializedComputePipelines<S>;
 
     fn into_plugin(self) -> impl Plugin {
         |app: &mut App| {}
