@@ -12,14 +12,17 @@ use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::system::{Query, ResMut, Resource};
 use bevy_render::{
     render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin},
-    render_resource::{AsBindGroup, AsBindGroupError, BindGroupLayout, PreparedBindGroup, Shader},
+    render_resource::{
+        AsBindGroup, AsBindGroupError, BindGroupLayout, PreparedBindGroup,
+        RawRenderPipelineDescriptor, RenderPipelineDescriptor, Shader,
+    },
     renderer::RenderDevice,
     sync_world::{MainEntity, MainEntityHashMap},
     view::ViewVisibility,
     Extract, ExtractSchedule, RenderApp,
 };
 
-use crate::{handle::MaterialHandle, material_pipeline::MaterialPipeline};
+use crate::{handle::MaterialHandle, material_pipeline::MaterialPipeline, specialize::Specialize};
 
 pub enum SpecializeMaterialError {}
 
@@ -153,11 +156,19 @@ impl<M: Material<P>, P: MaterialPipeline> RenderAsset for MaterialProperties<M, 
     }
 }
 
-#[derive(Resource, Deref)]
+#[derive(Resource)]
 pub struct MaterialLayout<M: BaseMaterial> {
-    #[deref]
     pub layout: BindGroupLayout,
     _data: PhantomData<M>,
+}
+
+impl<M: BaseMaterial> Clone for MaterialLayout<M> {
+    fn clone(&self) -> Self {
+        Self {
+            layout: self.layout.clone(),
+            _data: PhantomData,
+        }
+    }
 }
 
 impl<M: BaseMaterial> FromWorld for MaterialLayout<M> {
@@ -165,19 +176,6 @@ impl<M: BaseMaterial> FromWorld for MaterialLayout<M> {
         let render_device = world.resource::<RenderDevice>();
         Self {
             layout: M::bind_group_layout(render_device),
-            _data: PhantomData,
-        }
-    }
-}
-
-impl<M: Material<P>, P: MaterialPipeline> FromWorld for MaterialShaders<M, P> {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        Self {
-            shaders: M::shaders()
-                .into_iter()
-                .map(|(key, path)| (key, asset_server.load(path)))
-                .collect(),
             _data: PhantomData,
         }
     }

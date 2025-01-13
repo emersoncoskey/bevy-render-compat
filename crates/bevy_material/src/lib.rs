@@ -8,9 +8,12 @@ pub mod specialize;
 mod tests {
     use bevy_app::{App, Plugin};
     use bevy_reflect::Reflect;
+    use bevy_render::render_resource::RenderPipelineDescriptor;
 
     use crate::handle::MaterialHandle;
-    use crate::material_pipeline::MaterialPipeline;
+    use crate::material::Material;
+    use crate::material_pipeline::{MaterialPipeline, MaterialRenderPipeline};
+    use crate::specialize::Specialize;
 
     #[derive(Reflect)]
     pub struct TestPipeline;

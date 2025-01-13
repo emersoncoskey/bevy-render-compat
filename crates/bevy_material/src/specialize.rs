@@ -1,20 +1,18 @@
-use bevy_app::Plugin;
+use bevy_app::{App, Plugin};
 use bevy_asset::AssetPath;
 use bevy_ecs::{
     query::{QueryData, ROQueryItem},
     system::Resource,
     world::{FromWorld, World},
 };
-use bevy_render::{
-    render_resource::{
-        CachedComputePipelineId, CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
-        RenderPipelineDescriptor,
-    },
-    Render,
+use bevy_render::render_resource::{
+    CachedComputePipelineId, CachedRenderPipelineId, ComputePipelineDescriptor, PipelineCache,
+    RenderPipelineDescriptor,
 };
 use bevy_utils::hashbrown::HashMap;
 use std::hash::Hash;
-use variadics_please::all_tuples;
+
+use crate::material::{BaseMaterial, MaterialLayout};
 
 pub trait SpecializedRenderPipeline: FromWorld + GetKey<RenderPipelineDescriptor> {}
 impl<T: FromWorld + GetKey<RenderPipelineDescriptor>> SpecializedRenderPipeline for T {}
@@ -119,5 +117,36 @@ impl<S: Specialize<ComputePipelineDescriptor>> SpecializedComputePipelines<S> {
             }
             pipeline_cache.queue_compute_pipeline(descriptor)
         })
+    }
+}
+
+pub struct SpecializeMaterial<M: BaseMaterial, const I: usize>(MaterialLayout<M>);
+
+impl<M: BaseMaterial, const I: usize> FromWorld for SpecializeMaterial<M, I> {
+    fn from_world(world: &mut World) -> Self {
+        let layout = world.resource::<MaterialLayout<M>>();
+        Self(layout.clone())
+    }
+}
+
+impl<M: BaseMaterial, const I: usize> Specialize<RenderPipelineDescriptor>
+    for SpecializeMaterial<M, I>
+{
+    type Key = ();
+
+    fn specialize(&self, (): Self::Key, item: &mut RenderPipelineDescriptor) {
+        item.layout.insert(I, self.0.layout.clone());
+    }
+}
+
+impl<M: BaseMaterial, const I: usize> GetKey<RenderPipelineDescriptor>
+    for SpecializeMaterial<M, I>
+{
+    type Data = ();
+
+    fn get_key((): ROQueryItem<Self::Data>, _world: &World) -> Self::Key {}
+
+    fn compute_key_plugin(&self) -> impl Plugin {
+        |_app: &mut App| {}
     }
 }
