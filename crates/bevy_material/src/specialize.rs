@@ -135,11 +135,43 @@ impl<M: BaseMaterial, const I: usize> Specialize<RenderPipelineDescriptor>
     type Key = ();
 
     fn specialize(&self, (): Self::Key, item: &mut RenderPipelineDescriptor) {
-        item.layout.insert(I, self.0.layout.clone());
+        //TODO: fill previous layouts with a dummy value if not long enough
+        if item.layout.len() <= I {
+            item.layout.insert(I, self.0.layout.clone());
+        } else {
+            item.layout.push(self.0.layout.clone());
+        }
     }
 }
 
 impl<M: BaseMaterial, const I: usize> GetKey<RenderPipelineDescriptor>
+    for SpecializeMaterial<M, I>
+{
+    type Data = ();
+
+    fn get_key((): ROQueryItem<Self::Data>, _world: &World) -> Self::Key {}
+
+    fn compute_key_plugin(&self) -> impl Plugin {
+        |_app: &mut App| {}
+    }
+}
+
+impl<M: BaseMaterial, const I: usize> Specialize<ComputePipelineDescriptor>
+    for SpecializeMaterial<M, I>
+{
+    type Key = ();
+
+    fn specialize(&self, (): Self::Key, item: &mut ComputePipelineDescriptor) {
+        //TODO: fill previous layouts with a dummy value if not long enough
+        if item.layout.len() <= I {
+            item.layout.insert(I, self.0.layout.clone());
+        } else {
+            item.layout.push(self.0.layout.clone());
+        }
+    }
+}
+
+impl<M: BaseMaterial, const I: usize> GetKey<ComputePipelineDescriptor>
     for SpecializeMaterial<M, I>
 {
     type Data = ();
