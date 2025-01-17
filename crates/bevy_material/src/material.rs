@@ -18,10 +18,7 @@ use bevy_render::{
     Extract, ExtractSchedule, RenderApp,
 };
 
-use crate::{
-    handle::MaterialHandle,
-    material_pipeline::MaterialPipeline},
-};
+use crate::{handle::MaterialHandle, material_pipeline::MaterialPipeline};
 
 pub enum SpecializeMaterialError {}
 
@@ -112,9 +109,10 @@ impl<M: BaseMaterial> RenderAsset for MaterialBindGroup<M> {
 
     fn prepare_asset(
         material: Self::SourceAsset,
-        (render_device, layout, ref mut material_param): &mut SystemParamItem<Self::Param>,
+        _asset_id: AssetId<M>,
+        (render_device, material_layout, ref mut material_param): &mut SystemParamItem<Self::Param>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
-        match material.as_bind_group(layout, render_device, material_param) {
+        match material.as_bind_group(&material_layout.layout, render_device, material_param) {
             Ok(bind_group) => Ok(MaterialBindGroup { bind_group }),
             Err(AsBindGroupError::RetryNextUpdate) => {
                 Err(PrepareAssetError::RetryNextUpdate(material))
@@ -147,15 +145,15 @@ impl<M: Material<P>, P: MaterialPipeline> RenderAsset for MaterialProperties<M, 
 
     fn prepare_asset(
         material: Self::SourceAsset,
+        _asset_id: AssetId<M>,
         (): &mut SystemParamItem<Self::Param>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         Ok(MaterialProperties::new(&material))
     }
 }
 
-#[derive(Resource, Deref)]
+#[derive(Resource)]
 pub struct MaterialLayout<M: BaseMaterial> {
-    #[deref]
     pub layout: BindGroupLayout,
     _data: PhantomData<M>,
 }
@@ -165,26 +163,6 @@ impl<M: BaseMaterial> FromWorld for MaterialLayout<M> {
         let render_device = world.resource::<RenderDevice>();
         Self {
             layout: M::bind_group_layout(render_device),
-            _data: PhantomData,
-        }
-    }
-}
-
-#[derive(Deref, Resource)]
-pub struct MaterialShaders<M: Material<P>, P: MaterialPipeline> {
-    #[deref]
-    shaders: LoadedShaders<P>,
-    _data: PhantomData<fn(M)>,
-}
-
-impl<M: Material<P>, P: MaterialPipeline> FromWorld for MaterialShaders<M, P> {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        let mut shaders = P::default_shaders();
-        shaders.extend(M::shaders());
-
-        Self {
-            shaders: shaders.load(asset_server),
             _data: PhantomData,
         }
     }

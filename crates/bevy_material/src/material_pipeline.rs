@@ -5,7 +5,10 @@ use bevy_asset::AssetPath;
 use bevy_ecs::system::{ReadOnlySystemParam, SystemParamItem};
 use bevy_reflect::TypePath;
 use bevy_render::{
-    render_resource::{CachedRenderPipelineId, RenderPipelineDescriptor},
+    render_resource::{
+        CachedRenderPipelineId, ComputePipeline, RenderPipeline, RenderPipelineDescriptor,
+        Specialize, SpecializeFn,
+    },
     renderer::RenderDevice,
     Render,
 };
@@ -22,7 +25,8 @@ pub trait MaterialPipeline: TypePath + Sized + 'static {
 }
 
 pub trait Pipelines {
-    type Cached: Send + Sync;
+    type CachedIds: Send + Sync;
+    type Specializers: Send + Sync;
 
     //TODO
 }
@@ -49,63 +53,93 @@ pub trait Pipelines {
 // }
 // ```
 
-pub struct MaterialRenderPipeline<S: Specialize<RenderPipelineDescriptor>> {
-    vertex_path: Option<AssetPath<'static>>,
-    fragment_path: Option<AssetPath<'static>>,
+pub trait DefaultVertex: Specialize<RenderPipeline> {
+    fn default_vertex() -> AssetPath<'static>;
+}
+
+pub trait DefaultFragment: Specialize<RenderPipeline> {
+    fn default_fragment() -> AssetPath<'static>;
+}
+
+pub trait DefaultCompute: Specialize<ComputePipeline> {
+    fn default_compute() -> AssetPath<'static>;
+}
+
+pub struct MaterialRenderPipeline<S: Specialize<RenderPipeline>> {
+    vertex: AssetPath<'static>,
+    fragment: AssetPath<'static>,
+    user_specializer: Option<SpecializeFn<RenderPipeline, S>>,
     _data: PhantomData<S>, // wire up the specializer somewhere in here
 }
 
-pub trait Specialize<T>: Send + Sync + 'static {
-    type Key: Clone + Hash + Eq;
-
-    fn specialize(&self, key: Self::Key, item: &mut T);
-
-    fn chain<S: Specialize>(self, next: S) -> impl Specialize<T> {
-        (self, next)
-    }
-}
-
-impl<K: Clone + Hash + Eq, T, F: Fn(&self, K, &mut T)> Specialize<T> for F {
-    type Key = K;
-
-    fn specialize(&self, key: Self::Key, item: &mut T) {
-        (self)(key, item)
-    }
-}
-
-macro_rules! impl_specialize {
-    ($(#[$meta:meta])* $(($S: ident, $s: ident, $k: ident)),*) => {
-        $(#[$meta])*
-         impl<T, $($S: Specialize<T>),*> Specialize<T> for ($($T,)*) {
-            type Key = ($($T,)*);
-
-            fn specialize(&self, key: Self::Key, item: &mut T) {
-                let ($($s,)*) = self;
-                let ($($k,)*) = key;
-                $($s.specialize($k, item);)*
-            }
+impl<S: Specialize<RenderPipeline> + DefaultVertex + DefaultFragment> Default
+    for MaterialRenderPipeline<S>
+{
+    fn default() -> Self {
+        Self {
+            vertex: S::default_vertex(),
+            fragment: S::default_fragment(),
+            user_specializer: None,
+            _data: PhantomData,
         }
     }
 }
 
-all_tuples!(
-    #[doc(fake_variadic)]
-    impl_specialize,
-    0,
-    15,
-    S,
-    s,
-    k
-);
+impl<S: Specialize<RenderPipeline>> MaterialRenderPipeline<S> {
+    pub fn new(vertex: AssetPath<'static>, fragment: AssetPath<'static>) -> Self {
+        Self {
+            vertex,
+            fragment,
+            user_specializer: None,
+            _data: PhantomData,
+        }
+    }
 
-pub struct RenderPipelineSpecializer<S: Specialize<RenderPipelineDescriptor>> {
-    specializer: S,
-    pipelines: HashMap<S::Key, CachedRenderPipelineId>,
-    base: RenderPipelineDescriptor,
+    pub fn with_vertex(self, vertex: AssetPath<'static>) -> Self {
+        Self { vertex, ..self }
+    }
+
+    pub fn with_fragment(self, fragment: AssetPath<'static>) -> Self {
+        Self { fragment, ..self }
+    }
+
+    pub fn specialize(self, specialize_fn: SpecializeFn<RenderPipeline, S>) -> Self {
+        Self {
+            user_specializer: Some(specialize_fn),
+            ..self
+        }
+    }
 }
 
-impl<S: Specialize<RenderPipelineDescriptor>> RenderPipelineSpecializer<S> {
-    fn specialize(&self, render_device: &RenderDevice, key: S::Key) -> CachedRenderPipelineId {
-        todo!()
+pub struct MaterialComputePipeline<S: Specialize<ComputePipeline>> {
+    compute: AssetPath<'static>,
+    user_specializer: Option<SpecializeFn<ComputePipeline, S>>,
+    _data: PhantomData<S>, // wire up the specializer somewhere in here
+}
+
+impl<S: Specialize<ComputePipeline> + DefaultCompute> Default for MaterialComputePipeline<S> {
+    fn default() -> Self {
+        Self {
+            compute: S::default_compute(),
+            user_specializer: None,
+            _data: PhantomData,
+        }
+    }
+}
+
+impl<S: Specialize<ComputePipeline>> MaterialComputePipeline<S> {
+    pub fn new(compute: AssetPath<'static>) -> Self {
+        Self {
+            compute,
+            user_specializer: None,
+            _data: PhantomData,
+        }
+    }
+
+    pub fn specialize(self, specialize_fn: SpecializeFn<ComputePipeline, S>) -> Self {
+        Self {
+            user_specializer: Some(specialize_fn),
+            ..self
+        }
     }
 }
