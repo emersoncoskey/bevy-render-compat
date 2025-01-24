@@ -227,20 +227,34 @@ fn sample_local_inscattering(local_atmosphere: AtmosphereSample, ray_dir: vec3<f
     return inscattering * view.exposure;
 }
 
-const SUN_ANGULAR_SIZE: f32 = 0.0174533; // angular diameter of sun in radians
+const SUN_ANGULAR_SIZE: f32 = 0.009513;
+const SUN_ANGULAR_RADIUS: f32 = SUN_ANGULAR_SIZE * 0.5;
 
 fn sample_sun_illuminance(ray_dir_ws: vec3<f32>, transmittance: vec3<f32>) -> vec3<f32> {
     var sun_illuminance = vec3(0.0);
+    let r = view_radius();
+    let sun_solid_angle = PI_2 * (1.0 - cos(SUN_ANGULAR_RADIUS));
     for (var light_i: u32 = 0u; light_i < lights.n_directional_lights; light_i++) {
         let light = &lights.directional_lights[light_i];
         let neg_LdotV = dot((*light).direction_to_light, ray_dir_ws);
         let angle_to_sun = fast_acos(neg_LdotV);
         let pixel_size = fwidth(angle_to_sun);
-        let factor = smoothstep(0.0, -pixel_size * ROOT_2, angle_to_sun - SUN_ANGULAR_SIZE * 0.5);
-        let sun_solid_angle = (SUN_ANGULAR_SIZE * SUN_ANGULAR_SIZE) * 4.0 * FRAC_PI;
-        sun_illuminance += ((*light).color.rgb / sun_solid_angle) * factor * ray_dir_ws.y;
+        let factor = smoothstep(
+            SUN_ANGULAR_RADIUS + pixel_size * ROOT_2,
+            SUN_ANGULAR_RADIUS - pixel_size * ROOT_2,
+            angle_to_sun
+        );
+
+        // shadow factor planet occluding the sun
+        let mu_view = ray_dir_ws.y;
+        let shadow_factor = f32(!ray_intersects_ground(r, mu_view));
+
+        // Calculate outer space luminance
+        let outer_space_luminance = (*light).color.rgb / sun_solid_angle * shadow_factor;        
+        sun_illuminance += outer_space_luminance * transmittance * factor;
     }
-    return sun_illuminance * transmittance * view.exposure;
+
+    return max(sun_illuminance * view.exposure, vec3(0.0));
 }
 
 // TRANSFORM UTILITIES
