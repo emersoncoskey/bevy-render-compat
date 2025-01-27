@@ -1,6 +1,6 @@
 #define_import_path bevy_pbr::atmosphere::functions
 
-#import bevy_render::maths::{PI, HALF_PI, PI_2, fast_acos, fast_atan2}
+#import bevy_render::maths::{PI, HALF_PI, PI_2, fast_acos_4, fast_atan2}
 
 #import bevy_pbr::atmosphere::{
     types::{Atmosphere,GpuMedium},
@@ -38,7 +38,7 @@
 // CONSTANTS
 
 const FRAC_PI: f32 = 0.3183098862; // 1 / π
-const FRAC_2_PI: f32 = 0.15915494309;
+const FRAC_2_PI: f32 = 0.15915494309; // 1 / (2π)
 const FRAC_3_16_PI: f32 = 0.0596831036594607509; // 3 / (16π)
 const FRAC_4_PI: f32 = 0.07957747154594767; // 1 / (4π)
 const ROOT_2: f32 = 1.41421356; // √2
@@ -71,41 +71,34 @@ fn sky_view_lut_r_mu_azimuth_to_uv(r: f32, mu: f32, azimuth: f32) -> vec2<f32> {
 
     let v_horizon = sqrt(r * r - atmosphere.bottom_radius * atmosphere.bottom_radius);
     let cos_beta = v_horizon / r;
-    let beta = fast_acos(cos_beta);
+    let beta = fast_acos_4(cos_beta);
     let horizon_zenith = PI - beta;
-    let view_zenith = fast_acos(mu);
+    let view_zenith = fast_acos_4(mu);
 
-    var v: f32;
-    if !ray_intersects_ground(r, mu) {
-        let coord = sqrt(1.0 - view_zenith / horizon_zenith);
-        v = (1.0 - coord) * 0.5;
-    } else {
-        let coord = (view_zenith - horizon_zenith) / beta;
-        v = sqrt(coord) * 0.5 + 0.5;
-    }
+    // Latitude parameterization
+    let l = view_zenith - horizon_zenith;
+    let abs_l = abs(l);
+    
+    let v = 0.5 + 0.5 * sign(l) * sqrt(abs_l / HALF_PI);
 
     return unit_to_sub_uvs(vec2(u, v), vec2<f32>(settings.sky_view_lut_size));
 }
 
 fn sky_view_lut_uv_to_zenith_azimuth(r: f32, uv: vec2<f32>) -> vec2<f32> {
-    let adj_uv = sub_uvs_to_unit(uv, vec2<f32>(settings.sky_view_lut_size));
+    let adj_uv = sub_uvs_to_unit(vec2(uv.x, 1.0 - uv.y), vec2<f32>(settings.sky_view_lut_size));
     let azimuth = (adj_uv.x - 0.5) * PI_2;
 
+    // Horizon parameters
     let v_horizon = sqrt(r * r - atmosphere.bottom_radius * atmosphere.bottom_radius);
     let cos_beta = v_horizon / r;
-    let beta = fast_acos(cos_beta);
+    let beta = fast_acos_4(cos_beta);
     let horizon_zenith = PI - beta;
 
-    var zenith: f32;
-    if adj_uv.y < 0.5 {
-        let coord = 1.0 - 2.0 * adj_uv.y;
-        zenith = horizon_zenith * (1.0 - coord * coord);
-    } else {
-        let coord = 2.0 * adj_uv.y - 1.0;
-        zenith = horizon_zenith + beta * coord * coord;
-    }
+    // Inverse mapping
+    let t = abs(2.0 * (adj_uv.y - 0.5));
+    let l = sign(adj_uv.y - 0.5) * HALF_PI * t * t;
 
-    return vec2(zenith, azimuth);
+    return vec2(horizon_zenith - l, azimuth);
 }
 
 // LUT SAMPLING
@@ -131,8 +124,22 @@ fn sample_sky_view_lut(r: f32, ray_dir_as: vec3<f32>) -> vec3<f32> {
 //A channel: average transmittance across all wavelengths to the current sample.
 fn sample_aerial_view_lut(uv: vec2<f32>, depth: f32) -> vec4<f32> {
     let view_pos = view.view_from_clip * vec4(uv_to_ndc(uv), depth, 1.0);
-    let dist = length(view_pos.xyz / view_pos.w) * settings.scene_units_to_m;
-    let uvw = vec3(uv, dist / settings.aerial_view_lut_max_distance);
+    let view_ray_dist = length(view_pos.xyz / view_pos.w) * settings.scene_units_to_m;
+    let t_max = settings.aerial_view_lut_max_distance;
+
+    // Special handling for first slice to avoid extrapolation
+    let delta_slice = t_max / f32(settings.aerial_view_lut_size.z);
+    if (view_ray_dist < delta_slice) {
+        let f = view_ray_dist / delta_slice;
+        let first_slice_uvw = vec3(uv, 0.5 / f32(settings.aerial_view_lut_size.z));
+        let sample = textureSampleLevel(aerial_view_lut, aerial_view_lut_sampler, first_slice_uvw, 0.0);
+        return vec4(sample.rgb * f, pow(sample.a, f));
+    }
+
+    // Offset by 0.5 slice to sample at the center of each slice
+    let normalized_depth = (view_ray_dist / t_max) * f32(settings.aerial_view_lut_size.z - 1u);
+    let w = (normalized_depth - 0.5) / f32(settings.aerial_view_lut_size.z);
+    let uvw = vec3(uv, clamp(w, 0.0, 1.0));
     return textureSampleLevel(aerial_view_lut, aerial_view_lut_sampler, uvw, 0.0);
 }
 
@@ -237,7 +244,7 @@ fn sample_sun_illuminance(ray_dir_ws: vec3<f32>, transmittance: vec3<f32>) -> ve
     for (var light_i: u32 = 0u; light_i < lights.n_directional_lights; light_i++) {
         let light = &lights.directional_lights[light_i];
         let neg_LdotV = dot((*light).direction_to_light, ray_dir_ws);
-        let angle_to_sun = fast_acos(neg_LdotV);
+        let angle_to_sun = fast_acos_4(neg_LdotV);
         let pixel_size = fwidth(angle_to_sun);
         let factor = smoothstep(
             SUN_ANGULAR_RADIUS + pixel_size * ROOT_2,
@@ -392,4 +399,64 @@ fn get_phase_function(medium: GpuMedium, cos_theta: f32) -> f32 {
             return 0.0;
         }
     }
+}
+
+struct RaymarchResult {
+    inscattering: vec3<f32>,
+    throughput: vec3<f32>,
+}
+
+fn raymarch_atmosphere(
+    r: f32,
+    ray_dir: vec3<f32>,
+    t_max: f32,
+    sample_count: f32,
+) -> RaymarchResult {
+    let mu = ray_dir.y;
+    let sample_count_floor = floor(sample_count);
+    let t_max_floor = t_max * sample_count_floor / sample_count;
+    
+    var result: RaymarchResult;
+    result.inscattering = vec3(0.0);
+    result.throughput = vec3(1.0);
+    var prev_t = 0.0;
+    for (var s = 0.0; s < sample_count; s += 1.0) {
+        // Use quadratic distribution
+        var t0 = (s / sample_count_floor);
+        var t1 = ((s + 1.0) / sample_count_floor);
+        t0 = t0 * t0;
+        t1 = t1 * t1;
+        t1 = select(t_max_floor * t1, t_max, t1 > 1.0);
+        let t_i = t_max_floor * t0 + (t1 - t_max_floor * t0) * 0.3;
+        let dt_i = t1 - t_max_floor * t0;
+
+        // Linear distribution
+        // let t_i = t_max * (s + 0.5) / sample_count;
+        // let dt_i = (t_i - prev_t);
+        // prev_t = t_i;
+
+        let local_r = get_local_r(r, mu, t_i);
+        let local_up = get_local_up(r, t_i, ray_dir);
+        let local_atmosphere = sample_atmosphere(local_r);
+
+        let sample_optical_depth = local_atmosphere.extinction * dt_i;
+        let sample_transmittance = exp(-sample_optical_depth);
+
+        let inscattering = sample_local_inscattering(
+            local_atmosphere,
+            ray_dir,
+            local_r,
+            local_up
+        );
+
+        let s_int = (inscattering - inscattering * sample_transmittance) / local_atmosphere.extinction;
+        result.inscattering += result.throughput * s_int;
+
+        result.throughput *= sample_transmittance;
+        if all(result.throughput < vec3(0.001)) {
+            break;
+        }
+    }
+
+    return result;
 }

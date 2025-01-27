@@ -410,7 +410,7 @@ impl Atmosphere {
     pub const EARTH: Self = Self {
         bottom_radius: 6_360_000.0,
         top_radius: 6_460_000.0,
-        ground_albedo: Vec3::splat(0.0),
+        ground_albedo: Vec3::splat(0.3),
         layers: [
             // Rayleigh scattering (air molecules)
             Medium {
