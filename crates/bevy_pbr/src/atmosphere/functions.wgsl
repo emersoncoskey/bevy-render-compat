@@ -124,23 +124,14 @@ fn sample_sky_view_lut(r: f32, ray_dir_as: vec3<f32>) -> vec3<f32> {
 //A channel: average transmittance across all wavelengths to the current sample.
 fn sample_aerial_view_lut(uv: vec2<f32>, depth: f32) -> vec4<f32> {
     let view_pos = view.view_from_clip * vec4(uv_to_ndc(uv), depth, 1.0);
-    let view_ray_dist = length(view_pos.xyz / view_pos.w) * settings.scene_units_to_m;
+    let dist = length(view_pos.xyz / view_pos.w) * settings.scene_units_to_m;
     let t_max = settings.aerial_view_lut_max_distance;
-
-    // Special handling for first slice to avoid extrapolation
-    let delta_slice = t_max / f32(settings.aerial_view_lut_size.z);
-    if (view_ray_dist < delta_slice) {
-        let f = view_ray_dist / delta_slice;
-        let first_slice_uvw = vec3(uv, 0.5 / f32(settings.aerial_view_lut_size.z));
-        let sample = textureSampleLevel(aerial_view_lut, aerial_view_lut_sampler, first_slice_uvw, 0.0);
-        return vec4(sample.rgb * f, pow(sample.a, f));
-    }
-
-    // Offset by 0.5 slice to sample at the center of each slice
-    let normalized_depth = (view_ray_dist / t_max) * f32(settings.aerial_view_lut_size.z - 1u);
-    let w = (normalized_depth - 0.5) / f32(settings.aerial_view_lut_size.z);
-    let uvw = vec3(uv, clamp(w, 0.0, 1.0));
-    return textureSampleLevel(aerial_view_lut, aerial_view_lut_sampler, uvw, 0.0);
+    let num_slices = f32(settings.aerial_view_lut_size.z);
+    let w = clamp((dist / t_max * num_slices - 0.5) / num_slices, 0.0, 1.0);
+    let sample = textureSampleLevel(aerial_view_lut, aerial_view_lut_sampler, vec3(uv, w), 0.0);
+    let first_slice_dist = (t_max / num_slices) * 1.0;
+    let fade = saturate(dist / first_slice_dist);
+    return vec4(exp(sample.rgb) * fade, exp(-sample.a * fade));
 }
 
 // PHASE FUNCTIONS
@@ -422,18 +413,18 @@ fn raymarch_atmosphere(
     var prev_t = 0.0;
     for (var s = 0.0; s < sample_count; s += 1.0) {
         // Use quadratic distribution
-        var t0 = (s / sample_count_floor);
-        var t1 = ((s + 1.0) / sample_count_floor);
-        t0 = t0 * t0;
-        t1 = t1 * t1;
-        t1 = select(t_max_floor * t1, t_max, t1 > 1.0);
-        let t_i = t_max_floor * t0 + (t1 - t_max_floor * t0) * 0.3;
-        let dt_i = t1 - t_max_floor * t0;
+        // var t0 = (s / sample_count_floor);
+        // var t1 = ((s + 1.0) / sample_count_floor);
+        // t0 = t0 * t0;
+        // t1 = t1 * t1;
+        // t1 = select(t_max_floor * t1, t_max, t1 > 1.0);
+        // let t_i = t_max_floor * t0 + (t1 - t_max_floor * t0) * 0.3;
+        // let dt_i = t1 - t_max_floor * t0;
 
         // Linear distribution
-        // let t_i = t_max * (s + 0.5) / sample_count;
-        // let dt_i = (t_i - prev_t);
-        // prev_t = t_i;
+        let t_i = t_max * (s + 0.5) / sample_count;
+        let dt_i = (t_i - prev_t);
+        prev_t = t_i;
 
         let local_r = get_local_r(r, mu, t_i);
         let local_up = get_local_up(r, t_i, ray_dir);

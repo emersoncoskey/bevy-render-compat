@@ -26,7 +26,7 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // TODO: this should be user controllable, whether to use per-pixel 
     // raymarching to get volumetric light shafts or the LUT
     // set this to 0.5 to compare with the raymarched reference
-    const raymarch_split = 0.0;
+    const raymarch_split = 0.5;
     if depth == 0.0 {
         let ray_dir_ws = uv_to_ray_direction(in.uv);
         let ray_dir_as = direction_world_to_atmosphere(ray_dir_ws.xyz);
@@ -57,7 +57,7 @@ fn main(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             let r = view_radius();
             let sample_count = mix(1.0, f32(settings.sky_view_lut_samples), clamp(t_max * 0.01, 0.0, 1.0));
             
-            return vec4(raymarch_atmosphere(r, ray_dir_ws.xyz, t_max, sample_count).inscattering, 1.0);
+            return vec4(raymarch_atmosphere(r, ray_dir_ws.xyz, t_max, 40.0).inscattering, 1.0);
         } else {
             return sample_aerial_view_lut(in.uv, depth);
         }
