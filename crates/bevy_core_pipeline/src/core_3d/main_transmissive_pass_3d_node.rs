@@ -1,10 +1,10 @@
-use super::{Camera3d, ViewTransmissionTexture};
+use super::{Camera3d, MainPhasesReadOnly, ViewTransmissionTexture};
 use crate::core_3d::Transmissive3d;
 use bevy_ecs::{prelude::*, query::QueryItem};
 use bevy_render::{
     camera::ExtractedCamera,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::ViewSortedRenderPhases,
+    render_phase::SortedRenderPhase,
     render_resource::{Extent3d, RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
     view::{ExtractedView, ViewDepthTexture, ViewTarget},
@@ -22,31 +22,21 @@ pub struct MainTransmissivePass3dNode;
 impl ViewNode for MainTransmissivePass3dNode {
     type ViewQuery = (
         &'static ExtractedCamera,
-        &'static ExtractedView,
         &'static Camera3d,
         &'static ViewTarget,
         Option<&'static ViewTransmissionTexture>,
         &'static ViewDepthTexture,
+        MainPhasesReadOnly<'static>,
     );
 
     fn run(
         &self,
         graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (camera, view, camera_3d, target, transmission, depth): QueryItem<Self::ViewQuery>,
+        (camera, camera_3d, target, transmission, depth, main_phases): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let view_entity = graph.view_entity();
-
-        let Some(transmissive_phases) =
-            world.get_resource::<ViewSortedRenderPhases<Transmissive3d>>()
-        else {
-            return Ok(());
-        };
-
-        let Some(transmissive_phase) = transmissive_phases.get(&view.retained_view_entity) else {
-            return Ok(());
-        };
 
         let physical_target_size = camera.physical_target_size.unwrap();
 
@@ -63,7 +53,7 @@ impl ViewNode for MainTransmissivePass3dNode {
         #[cfg(feature = "trace")]
         let _main_transmissive_pass_3d_span = info_span!("main_transmissive_pass_3d").entered();
 
-        if !transmissive_phase.items.is_empty() {
+        if !main_phases.transmissive.is_empty() {
             let screen_space_specular_transmission_steps =
                 camera_3d.screen_space_specular_transmission_steps;
             if screen_space_specular_transmission_steps > 0 {
@@ -77,7 +67,7 @@ impl ViewNode for MainTransmissivePass3dNode {
                 // might want to use a more sophisticated heuristic (e.g. based on view bounds, or with an exponential
                 // falloff so that nearby objects have more levels of transparency available to them)
                 for range in split_range(
-                    0..transmissive_phase.items.len(),
+                    0..main_phases.transmissive.len(),
                     screen_space_specular_transmission_steps,
                 ) {
                     // Copy the main texture to the transmission texture, allowing to use the color output of the
@@ -100,9 +90,12 @@ impl ViewNode for MainTransmissivePass3dNode {
                     }
 
                     // render items in range
-                    if let Err(err) =
-                        transmissive_phase.render_range(&mut render_pass, world, view_entity, range)
-                    {
+                    if let Err(err) = main_phases.transmissive.render_range(
+                        &mut render_pass,
+                        world,
+                        view_entity,
+                        range,
+                    ) {
                         error!("Error encountered while rendering the transmissive phase {err:?}");
                     }
                 }
@@ -114,7 +107,11 @@ impl ViewNode for MainTransmissivePass3dNode {
                     render_pass.set_camera_viewport(viewport);
                 }
 
-                if let Err(err) = transmissive_phase.render(&mut render_pass, world, view_entity) {
+                if let Err(err) =
+                    main_phases
+                        .transmissive
+                        .render(&mut render_pass, world, view_entity)
+                {
                     error!("Error encountered while rendering the transmissive phase {err:?}");
                 }
             }

@@ -4,7 +4,6 @@ use bevy_render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::ViewSortedRenderPhases,
     render_resource::{RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
     view::{ExtractedView, ViewDepthTexture, ViewTarget},
@@ -12,6 +11,8 @@ use bevy_render::{
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
+
+use super::MainPhasesReadOnly;
 
 /// A [`bevy_render::render_graph::Node`] that runs the [`Transparent3d`]
 /// [`ViewSortedRenderPhases`].
@@ -21,30 +22,20 @@ pub struct MainTransparentPass3dNode;
 impl ViewNode for MainTransparentPass3dNode {
     type ViewQuery = (
         &'static ExtractedCamera,
-        &'static ExtractedView,
         &'static ViewTarget,
         &'static ViewDepthTexture,
+        MainPhasesReadOnly<'static>,
     );
     fn run(
         &self,
         graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (camera, view, target, depth): QueryItem<Self::ViewQuery>,
+        (camera, target, depth, main_phases): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let view_entity = graph.view_entity();
 
-        let Some(transparent_phases) =
-            world.get_resource::<ViewSortedRenderPhases<Transparent3d>>()
-        else {
-            return Ok(());
-        };
-
-        let Some(transparent_phase) = transparent_phases.get(&view.retained_view_entity) else {
-            return Ok(());
-        };
-
-        if !transparent_phase.items.is_empty() {
+        if !main_phases.transparent.is_empty() {
             // Run the transparent pass, sorted back-to-front
             // NOTE: Scoped to drop the mutable borrow of render_context
             #[cfg(feature = "trace")]
@@ -72,7 +63,10 @@ impl ViewNode for MainTransparentPass3dNode {
                 render_pass.set_camera_viewport(viewport);
             }
 
-            if let Err(err) = transparent_phase.render(&mut render_pass, world, view_entity) {
+            if let Err(err) = main_phases
+                .transparent
+                .render(&mut render_pass, world, view_entity)
+            {
                 error!("Error encountered while rendering the transparent phase {err:?}");
             }
 

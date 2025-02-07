@@ -4,7 +4,7 @@ use bevy_render::{
     camera::ExtractedCamera,
     diagnostic::RecordDiagnostics,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::ViewSortedRenderPhases,
+    render_phase::SortedRenderPhase,
     render_resource::{RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
     view::{ExtractedView, ViewDepthTexture, ViewTarget},
@@ -22,26 +22,19 @@ impl ViewNode for MainTransparentPass2dNode {
         &'static ExtractedView,
         &'static ViewTarget,
         &'static ViewDepthTexture,
+        &'static SortedRenderPhase<Transparent2d>,
     );
 
     fn run<'w>(
         &self,
         graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (camera, view, target, depth): bevy_ecs::query::QueryItem<'w, Self::ViewQuery>,
+        (camera, view, target, depth, transparent_phase): bevy_ecs::query::QueryItem<
+            'w,
+            Self::ViewQuery,
+        >,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
-        let Some(transparent_phases) =
-            world.get_resource::<ViewSortedRenderPhases<Transparent2d>>()
-        else {
-            return Ok(());
-        };
-
-        let view_entity = graph.view_entity();
-        let Some(transparent_phase) = transparent_phases.get(&view.retained_view_entity) else {
-            return Ok(());
-        };
-
         // This needs to run at least once to clear the background color, even if there are no items to render
         {
             #[cfg(feature = "trace")]
@@ -73,7 +66,9 @@ impl ViewNode for MainTransparentPass2dNode {
                 #[cfg(feature = "trace")]
                 let _transparent_main_pass_2d_span =
                     info_span!("transparent_main_pass_2d").entered();
-                if let Err(err) = transparent_phase.render(&mut render_pass, world, view_entity) {
+                if let Err(err) =
+                    transparent_phase.render(&mut render_pass, world, graph.view_entity())
+                {
                     error!("Error encountered while rendering the transparent 2D phase {err:?}");
                 }
             }

@@ -53,8 +53,7 @@ use bevy_render::{
     render_graph::{EmptyNode, RenderGraphApp, ViewNodeRunner},
     render_phase::{
         sort_phase_system, BinnedPhaseItem, CachedRenderPipelinePhaseItem, DrawFunctionId,
-        DrawFunctions, PhaseItem, PhaseItemExtraIndex, SortedPhaseItem, ViewBinnedRenderPhases,
-        ViewSortedRenderPhases,
+        DrawFunctions, PhaseItem, PhaseItemExtraIndex, SortedPhaseItem,
     },
     render_resource::{
         BindGroupId, CachedRenderPipelineId, Extent3d, TextureDescriptor, TextureDimension,
@@ -85,9 +84,6 @@ impl Plugin for Core2dPlugin {
             .init_resource::<DrawFunctions<Opaque2d>>()
             .init_resource::<DrawFunctions<AlphaMask2d>>()
             .init_resource::<DrawFunctions<Transparent2d>>()
-            .init_resource::<ViewSortedRenderPhases<Transparent2d>>()
-            .init_resource::<ViewBinnedRenderPhases<Opaque2d>>()
-            .init_resource::<ViewBinnedRenderPhases<AlphaMask2d>>()
             .add_systems(ExtractSchedule, extract_core_2d_camera_phases)
             .add_systems(
                 Render,

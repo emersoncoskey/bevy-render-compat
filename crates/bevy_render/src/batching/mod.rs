@@ -1,19 +1,22 @@
 use bevy_ecs::{
     component::Component,
     entity::Entity,
-    system::{ResMut, SystemParam, SystemParamItem},
+    system::{Query, SystemParam, SystemParamItem},
 };
 use bytemuck::Pod;
 use nonmax::NonMaxU32;
 
 use self::gpu_preprocessing::IndirectParametersBuffers;
-use crate::{render_phase::PhaseItemExtraIndex, sync_world::MainEntity};
 use crate::{
     render_phase::{
         BinnedPhaseItem, CachedRenderPipelinePhaseItem, DrawFunctionId, SortedPhaseItem,
-        SortedRenderPhase, ViewBinnedRenderPhases,
+        SortedRenderPhase,
     },
     render_resource::{CachedRenderPipelineId, GpuArrayBufferable},
+};
+use crate::{
+    render_phase::{BinnedRenderPhase, PhaseItemExtraIndex},
+    sync_world::MainEntity,
 };
 
 pub mod gpu_preprocessing;
@@ -158,7 +161,7 @@ pub trait GetFullBatchData: GetBatchData {
     ///   batch in the `MeshUniform` output buffer.
     ///
     /// * `batch_set_index` is the index of the batch set in the
-    ///   [`gpu_preprocessing::IndirectBatchSet`] buffer, if this batch belongs to
+    ///   [`gpu_preprocessing::IndirectBatchSet`] buffer, if this batch belons to
     ///   a batch set.
     ///
     /// * `indirect_parameters_buffers` is the buffer in which to write the
@@ -177,11 +180,11 @@ pub trait GetFullBatchData: GetBatchData {
 }
 
 /// Sorts a render phase that uses bins.
-pub fn sort_binned_render_phase<BPI>(mut phases: ResMut<ViewBinnedRenderPhases<BPI>>)
+pub fn sort_binned_render_phase<BPI>(mut phases: Query<&mut BinnedRenderPhase<BPI>>)
 where
     BPI: BinnedPhaseItem,
 {
-    for phase in phases.values_mut() {
+    for mut phase in &mut phases {
         phase.multidrawable_mesh_keys.sort_unstable();
         phase.batchable_mesh_keys.sort_unstable();
         phase.unbatchable_mesh_keys.sort_unstable();
@@ -190,7 +193,7 @@ where
 
 /// Batches the items in a sorted render phase.
 ///
-/// This means comparing metadata needed to draw each phase item and trying to
+/// This means comparin metadata needed to draw each phase item and trying to
 /// combine the draws into a batch.
 ///
 /// This is common code factored out from

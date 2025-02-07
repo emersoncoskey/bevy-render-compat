@@ -4,7 +4,7 @@ use bevy_render::{
     diagnostic::RecordDiagnostics,
     experimental::occlusion_culling::OcclusionCulling,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::{TrackedRenderPass, ViewBinnedRenderPhases},
+    render_phase::TrackedRenderPass,
     render_resource::{CommandEncoderDescriptor, PipelineCache, RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
     view::{ExtractedView, NoIndirectDrawing, ViewDepthTexture, ViewUniformOffset},
@@ -13,7 +13,10 @@ use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use crate::skybox::prepass::{RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup};
+use crate::{
+    core_3d::PrepassPhasesReadOnly,
+    skybox::prepass::{self, RenderSkyboxPrepassPipeline, SkyboxPrepassBindGroup},
+};
 
 use super::{
     AlphaMask3dPrepass, DeferredPrepass, Opaque3dPrepass, PreviousViewUniformOffset,
@@ -56,10 +59,10 @@ pub struct LatePrepassNode;
 impl ViewNode for LatePrepassNode {
     type ViewQuery = (
         &'static ExtractedCamera,
-        &'static ExtractedView,
         &'static ViewDepthTexture,
         &'static ViewPrepassTextures,
         &'static ViewUniformOffset,
+        PrepassPhasesReadOnly<'static>,
         Option<&'static DeferredPrepass>,
         Option<&'static RenderSkyboxPrepassPipeline>,
         Option<&'static SkyboxPrepassBindGroup>,
@@ -100,10 +103,10 @@ fn run_prepass<'w>(
     render_context: &mut RenderContext<'w>,
     (
         camera,
-        extracted_view,
         view_depth_texture,
         view_prepass_textures,
         view_uniform_offset,
+        prepass_phases,
         deferred_prepass,
         skybox_prepass_pipeline,
         skybox_prepass_bind_group,
@@ -114,20 +117,6 @@ fn run_prepass<'w>(
     world: &'w World,
     label: &'static str,
 ) -> Result<(), NodeRunError> {
-    let (Some(opaque_prepass_phases), Some(alpha_mask_prepass_phases)) = (
-        world.get_resource::<ViewBinnedRenderPhases<Opaque3dPrepass>>(),
-        world.get_resource::<ViewBinnedRenderPhases<AlphaMask3dPrepass>>(),
-    ) else {
-        return Ok(());
-    };
-
-    let (Some(opaque_prepass_phase), Some(alpha_mask_prepass_phase)) = (
-        opaque_prepass_phases.get(&extracted_view.retained_view_entity),
-        alpha_mask_prepass_phases.get(&extracted_view.retained_view_entity),
-    ) else {
-        return Ok(());
-    };
-
     let diagnostics = render_context.diagnostic_recorder();
 
     let mut color_attachments = vec![
@@ -178,19 +167,24 @@ fn run_prepass<'w>(
         }
 
         // Opaque draws
-        if !opaque_prepass_phase.is_empty() {
+        if !prepass_phases.opaque.is_empty() {
             #[cfg(feature = "trace")]
             let _opaque_prepass_span = info_span!("opaque_prepass").entered();
-            if let Err(err) = opaque_prepass_phase.render(&mut render_pass, world, view_entity) {
+            if let Err(err) = prepass_phases
+                .opaque
+                .render(&mut render_pass, world, view_entity)
+            {
                 error!("Error encountered while rendering the opaque prepass phase {err:?}");
             }
         }
 
         // Alpha masked draws
-        if !alpha_mask_prepass_phase.is_empty() {
+        if !prepass_phases.alpha_mask.is_empty() {
             #[cfg(feature = "trace")]
             let _alpha_mask_prepass_span = info_span!("alpha_mask_prepass").entered();
-            if let Err(err) = alpha_mask_prepass_phase.render(&mut render_pass, world, view_entity)
+            if let Err(err) = prepass_phases
+                .alpha_mask
+                .render(&mut render_pass, world, view_entity)
             {
                 error!("Error encountered while rendering the alpha mask prepass phase {err:?}");
             }
