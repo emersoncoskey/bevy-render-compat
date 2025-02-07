@@ -1,13 +1,11 @@
-use super::{Camera3d, MainPhasesReadOnly, ViewTransmissionTexture};
-use crate::core_3d::Transmissive3d;
+use super::{Camera3d, MainPhases3dReadOnly, ViewTransmissionTexture};
 use bevy_ecs::{prelude::*, query::QueryItem};
 use bevy_render::{
     camera::ExtractedCamera,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
-    render_phase::SortedRenderPhase,
     render_resource::{Extent3d, RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
+    view::{ViewDepthTexture, ViewTarget},
 };
 use core::ops::Range;
 use tracing::error;
@@ -26,7 +24,7 @@ impl ViewNode for MainTransmissivePass3dNode {
         &'static ViewTarget,
         Option<&'static ViewTransmissionTexture>,
         &'static ViewDepthTexture,
-        MainPhasesReadOnly<'static>,
+        MainPhases3dReadOnly,
     );
 
     fn run(

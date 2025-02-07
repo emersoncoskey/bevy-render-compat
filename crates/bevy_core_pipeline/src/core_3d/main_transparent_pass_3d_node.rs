@@ -1,4 +1,3 @@
-use crate::core_3d::Transparent3d;
 use bevy_ecs::{prelude::*, query::QueryItem};
 use bevy_render::{
     camera::ExtractedCamera,
@@ -6,13 +5,13 @@ use bevy_render::{
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
     render_resource::{RenderPassDescriptor, StoreOp},
     renderer::RenderContext,
-    view::{ExtractedView, ViewDepthTexture, ViewTarget},
+    view::{ViewDepthTexture, ViewTarget},
 };
 use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use super::MainPhasesReadOnly;
+use super::MainPhases3dReadOnly;
 
 /// A [`bevy_render::render_graph::Node`] that runs the [`Transparent3d`]
 /// [`ViewSortedRenderPhases`].
@@ -24,7 +23,7 @@ impl ViewNode for MainTransparentPass3dNode {
         &'static ExtractedCamera,
         &'static ViewTarget,
         &'static ViewDepthTexture,
-        MainPhasesReadOnly<'static>,
+        MainPhases3dReadOnly,
     );
     fn run(
         &self,

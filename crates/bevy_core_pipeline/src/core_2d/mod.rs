@@ -36,7 +36,7 @@ use bevy_asset::UntypedAssetId;
 use bevy_platform_support::collections::{HashMap, HashSet};
 use bevy_render::{
     batching::gpu_preprocessing::GpuPreprocessingMode,
-    render_phase::PhaseItemBatchSetKey,
+    render_phase::{BinnedRenderPhase, PhaseItemBatchSetKey, SortedRenderPhase},
     view::{ExtractedView, RetainedViewEntity},
 };
 pub use camera_2d::*;
@@ -45,7 +45,11 @@ pub use main_transparent_pass_2d_node::*;
 
 use crate::{tonemapping::TonemappingNode, upscaling::UpscalingNode};
 use bevy_app::{App, Plugin};
-use bevy_ecs::prelude::*;
+use bevy_ecs::{
+    prelude::*,
+    query::QueryData,
+    system::lifetimeless::{Read, Write},
+};
 use bevy_math::FloatOrd;
 use bevy_render::{
     camera::{Camera, ExtractedCamera},
@@ -412,6 +416,14 @@ impl CachedRenderPipelinePhaseItem for Transparent2d {
     fn cached_pipeline(&self) -> CachedRenderPipelineId {
         self.pipeline
     }
+}
+
+#[derive(QueryData)]
+#[query_data(mutable)]
+pub struct MainPhases2d {
+    pub opaque: Write<BinnedRenderPhase<Opaque2d>>,
+    pub alpha_mask: Write<BinnedRenderPhase<AlphaMask2d>>,
+    pub transparent: Write<SortedRenderPhase<Transparent2d>>,
 }
 
 pub fn extract_core_2d_camera_phases(

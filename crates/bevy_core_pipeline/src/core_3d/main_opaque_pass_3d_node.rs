@@ -13,7 +13,7 @@ use tracing::error;
 #[cfg(feature = "trace")]
 use tracing::info_span;
 
-use super::MainPhasesReadOnly;
+use super::MainPhases3dReadOnly;
 
 /// A [`bevy_render::render_graph::Node`] that runs the [`Opaque3d`] and [`AlphaMask3d`]
 /// [`ViewBinnedRenderPhases`]s.
@@ -27,7 +27,7 @@ impl ViewNode for MainOpaquePass3dNode {
         Option<&'static SkyboxPipelineId>,
         Option<&'static SkyboxBindGroup>,
         &'static ViewUniformOffset,
-        MainPhasesReadOnly<'static>,
+        MainPhases3dReadOnly,
     );
 
     fn run<'w>(

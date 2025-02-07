@@ -82,7 +82,7 @@ pub use main_transparent_pass_3d_node::*;
 use bevy_app::{App, Plugin, PostUpdate};
 use bevy_asset::UntypedAssetId;
 use bevy_color::LinearRgba;
-use bevy_ecs::{prelude::*, query::QueryData};
+use bevy_ecs::{prelude::*, query::QueryData, system::lifetimeless::Write};
 use bevy_image::BevyDefault;
 use bevy_math::FloatOrd;
 use bevy_platform_support::collections::{HashMap, HashSet};
@@ -595,25 +595,25 @@ impl CachedRenderPipelinePhaseItem for Transparent3d {
 
 #[derive(QueryData)]
 #[query_data(mutable)]
-pub struct MainPhases<'w> {
-    pub opaque: &'w mut BinnedRenderPhase<Opaque3d>,
-    pub alpha_mask: &'w mut BinnedRenderPhase<AlphaMask3d>,
-    pub transmissive: &'w mut SortedRenderPhase<Transmissive3d>,
-    pub transparent: &'w mut SortedRenderPhase<Transparent3d>,
+pub struct MainPhases3d {
+    pub opaque: Write<BinnedRenderPhase<Opaque3d>>,
+    pub alpha_mask: Write<BinnedRenderPhase<AlphaMask3d>>,
+    pub transmissive: Write<SortedRenderPhase<Transmissive3d>>,
+    pub transparent: Write<SortedRenderPhase<Transparent3d>>,
 }
 
 #[derive(QueryData)]
 #[query_data(mutable)]
-pub struct PrepassPhases<'w> {
-    pub opaque: &'w mut BinnedRenderPhase<Opaque3dPrepass>,
-    pub alpha_mask: &'w mut BinnedRenderPhase<AlphaMask3dPrepass>,
+pub struct PrepassPhases3d {
+    pub opaque: Write<BinnedRenderPhase<Opaque3dPrepass>>,
+    pub alpha_mask: Write<BinnedRenderPhase<AlphaMask3dPrepass>>,
 }
 
 #[derive(QueryData)]
 #[query_data(mutable)]
-pub struct DeferredPhases<'w> {
-    pub opaque: &'w mut BinnedRenderPhase<Opaque3dDeferred>,
-    pub alpha_mask: &'w mut BinnedRenderPhase<AlphaMask3dDeferred>,
+pub struct DeferredPhases3d {
+    pub opaque: Write<BinnedRenderPhase<Opaque3dDeferred>>,
+    pub alpha_mask: Write<BinnedRenderPhase<AlphaMask3dDeferred>>,
 }
 
 // TODO: better way to do insert_or_clear
@@ -624,9 +624,41 @@ pub struct DeferredPhases<'w> {
 // ) {
 // }
 
+pub fn setup_core_3d_camera_phases(
+    cameras_3d: Extract<Query<(RenderEntity, &Camera, Has<NoIndirectDrawing>), With<Camera3d>>>,
+    extracted_cameras_3d: Query<Option<MainPhases3dReadOnly>>,
+    gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
+    mut commands: Commands,
+) {
+    for (render_entity, camera, no_indirect_drawing) in &cameras_3d {
+        if !camera.is_active {
+            continue;
+        }
+
+        if extracted_cameras_3d.get(render_entity).is_ok() {
+            continue;
+        }
+
+        // If GPU culling is in use, use it (and indirect mode); otherwise, just
+        // preprocess the meshes.
+        let gpu_preprocessing_mode = gpu_preprocessing_support.min(if !no_indirect_drawing {
+            GpuPreprocessingMode::Culling
+        } else {
+            GpuPreprocessingMode::PreprocessingOnly
+        });
+
+        commands.entity(render_entity).insert((
+            BinnedRenderPhase::<Opaque3d>::new(gpu_preprocessing_mode),
+            BinnedRenderPhase::<AlphaMask3d>::new(gpu_preprocessing_mode),
+            SortedRenderPhase::<Transmissive3d>::default(),
+            SortedRenderPhase::<Transparent3d>::default(),
+        ));
+    }
+}
+
 pub fn extract_core_3d_camera_phases(
     cameras_3d: Extract<Query<(Entity, &Camera, Has<NoIndirectDrawing>), With<Camera3d>>>,
-    extracted_cameras_3d: Query<(MainEntity, MainPhases)>,
+    extracted_cameras_3d: Query<(MainEntity, MainPhases3d)>,
     mut live_entities: Local<HashSet<RetainedViewEntity>>,
     gpu_preprocessing_support: Res<GpuPreprocessingSupport>,
 ) {
@@ -951,7 +983,7 @@ pub fn prepare_prepass_textures(
         Has<MotionVectorPrepass>,
         Has<DeferredPrepass>,
         //note: used only as a filter for views that have the core3d phases. Doesn't `Camera3d` cover this?
-        AnyOf<(PrepassPhases, DeferredPhases)>,
+        AnyOf<(PrepassPhases3d, DeferredPhases3d)>,
     )>,
 ) {
     let mut depth_textures = <HashMap<_, _>>::default();

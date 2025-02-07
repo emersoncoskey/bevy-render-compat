@@ -655,7 +655,7 @@ impl<BPI> BinnedRenderPhase<BPI>
 where
     BPI: BinnedPhaseItem,
 {
-    fn new(gpu_preprocessing: GpuPreprocessingMode) -> Self {
+    pub fn new(gpu_preprocessing: GpuPreprocessingMode) -> Self {
         Self {
             multidrawable_mesh_keys: vec![],
             multidrawable_mesh_values: HashMap::default(),
